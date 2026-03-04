@@ -38,6 +38,16 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Videolarni yuklash uchun galereya ruxsati kerak",
+          "cameraPermission": "Video olish uchun kamera ruxsati kerak"
+        }
       ]
     ],
     "experiments": {

@@ -2,7 +2,7 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/hooks/useTheme';
 
 function UploadTabButton({ onPress, children }: any) {
   return (
@@ -15,12 +15,11 @@ function UploadTabButton({ onPress, children }: any) {
 }
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const bg = isDark ? '#0f0f0f' : '#fff';
-  const border = isDark ? '#272727' : '#e5e5e5';
-  const inactive = isDark ? '#aaa' : '#606060';
-  const active = isDark ? '#fff' : '#0f0f0f';
+  const { colors } = useTheme();
+  const bg = colors.tabBar;
+  const border = colors.tabBarBorder;
+  const inactive = colors.iconInactive;
+  const active = colors.iconActive;
 
   return (
     <Tabs

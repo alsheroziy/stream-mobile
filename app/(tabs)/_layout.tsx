@@ -1,56 +1,106 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
-
-import { HapticTab } from '@/components/haptic-tab';
-import { Colors } from '@/constants/theme';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+
+function UploadTabButton({ onPress, children }: any) {
+  return (
+    <TouchableOpacity onPress={onPress} style={styles.uploadBtn} activeOpacity={0.8}>
+      <View style={styles.uploadInner}>
+        <Ionicons name="add" size={26} color="#fff" />
+      </View>
+    </TouchableOpacity>
+  );
+}
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const bg = isDark ? '#0f0f0f' : '#fff';
+  const border = isDark ? '#272727' : '#e5e5e5';
+  const inactive = isDark ? '#aaa' : '#606060';
+  const active = isDark ? '#fff' : '#0f0f0f';
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
+        tabBarStyle: {
+          backgroundColor: bg,
+          borderTopColor: border,
+          borderTopWidth: 0.5,
+          height: 56,
+          paddingBottom: 6,
+          paddingTop: 6,
+        },
+        tabBarActiveTintColor: active,
+        tabBarInactiveTintColor: inactive,
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '500' },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+          title: 'Asosiy',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
-        name="search"
+        name="shorts"
         options={{
-          title: 'Qidiruv',
-          tabBarIcon: ({ color, size }) => <Ionicons name="search" size={size} color={color} />,
+          title: 'Shorts',
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="play-circle-outline" size={26} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="upload"
         options={{
-          title: 'Yuklash',
-          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size} color={color} />,
+          title: '',
+          tabBarButton: (props) => <UploadTabButton {...props} />,
         }}
       />
       <Tabs.Screen
         name="subscriptions"
         options={{
           title: 'Obunalar',
-          tabBarIcon: ({ color, size }) => <Ionicons name="tv" size={size} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'tv' : 'tv-outline'} size={24} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profil',
-          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
+          title: 'Siz',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={24} color={color} />
+          ),
         }}
       />
+      <Tabs.Screen name="search" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  uploadBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadInner: {
+    width: 44,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#aaa',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});

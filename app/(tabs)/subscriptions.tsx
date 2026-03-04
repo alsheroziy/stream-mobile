@@ -1,15 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  RefreshControl, ScrollView, StatusBar,
+  RefreshControl, ScrollView, StatusBar, FlatList,
 } from 'react-native'
 import { router } from 'expo-router'
-import { FlashList } from '@shopify/flash-list'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '@/lib/supabase'
 import { Video, Profile, Notification } from '@/lib/types'
 
-type SubTab = 'feed' | 'notifications'
+const SUB_FILTERS = ['Hammasi', 'Bugun', 'Videolar', 'Shorts', 'Jonli']
 
 function formatViews(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -19,30 +18,28 @@ function formatViews(n: number) {
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
-  const days = Math.floor(diff / 86400000)
   const hours = Math.floor(diff / 3600000)
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins} daqiqa oldin`
+  const days = Math.floor(diff / 86400000)
+  if (hours < 1) return `${Math.floor(diff / 60000)} daqiqa oldin`
   if (hours < 24) return `${hours} soat oldin`
   if (days < 7) return `${days} kun oldin`
   return `${Math.floor(days / 7)} hafta oldin`
 }
 
 function formatDuration(s: number) {
-  const m = Math.floor(s / 60)
-  const sec = s % 60
+  const m = Math.floor(s / 60); const sec = s % 60
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
+type SubTab = 'feed' | 'notifications'
+
 const NOTIF_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  like: 'thumbs-up',
-  comment: 'chatbubble',
-  subscribe: 'people',
-  reply: 'return-down-forward',
+  like: 'thumbs-up', comment: 'chatbubble', subscribe: 'people', reply: 'return-down-forward',
 }
 
 export default function SubscriptionsScreen() {
   const [activeTab, setActiveTab] = useState<SubTab>('feed')
+  const [activeFilter, setActiveFilter] = useState('Hammasi')
   const [videos, setVideos] = useState<Video[]>([])
   const [subscriptions, setSubscriptions] = useState<Profile[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -55,44 +52,34 @@ export default function SubscriptionsScreen() {
   async function loadData() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { setLoading(false); return }
-
     const userId = session.user.id
 
-    const [{ data: subChannels }, { data: notifData }] = await Promise.all([
+    const [{ data: subData }, { data: notifData }] = await Promise.all([
       supabase.from('subscriptions').select('channel_id').eq('subscriber_id', userId),
       supabase.from('notifications')
         .select(`*, from_user:profiles!notifications_from_user_id_fkey(id, username, full_name, avatar_url), video:videos(id, title, thumbnail_url)`)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(30),
+        .eq('user_id', userId).order('created_at', { ascending: false }).limit(30),
     ])
 
-    const channelIds = (subChannels ?? []).map((s: any) => s.channel_id)
+    const channelIds = (subData ?? []).map((s: any) => s.channel_id)
     setUnreadCount((notifData ?? []).filter((n: any) => !n.is_read).length)
     setNotifications((notifData ?? []) as Notification[])
 
     if (channelIds.length > 0) {
-      const [{ data: feedVideos }, { data: channelsData }] = await Promise.all([
+      const [{ data: feedVideos }, { data: channels }] = await Promise.all([
         supabase.from('videos')
           .select(`*, channel:profiles(id, username, full_name, avatar_url)`)
-          .in('channel_id', channelIds)
-          .eq('is_published', true)
-          .order('created_at', { ascending: false })
-          .limit(30),
-        supabase.from('profiles').select('*').in('id', channelIds).order('subscribers_count', { ascending: false }),
+          .in('channel_id', channelIds).eq('is_published', true)
+          .order('created_at', { ascending: false }).limit(30),
+        supabase.from('profiles').select('*').in('id', channelIds),
       ])
       setVideos((feedVideos ?? []) as Video[])
-      setSubscriptions((channelsData ?? []) as Profile[])
+      setSubscriptions((channels ?? []) as Profile[])
     }
-
-    setLoading(false)
-    setRefreshing(false)
+    setLoading(false); setRefreshing(false)
   }
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true)
-    loadData()
-  }, [])
+  const onRefresh = useCallback(() => { setRefreshing(true); loadData() }, [])
 
   async function markAllRead() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -102,28 +89,29 @@ export default function SubscriptionsScreen() {
     setUnreadCount(0)
   }
 
-  if (loading) {
-    return <View style={styles.centered}><Text style={{ color: '#606060' }}>Yuklanmoqda...</Text></View>
-  }
-
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" />
 
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
           {activeTab === 'feed' ? 'Obunalar' : 'Bildirishnomalar'}
         </Text>
-        {activeTab === 'notifications' && unreadCount > 0 && (
-          <TouchableOpacity onPress={markAllRead}>
-            <Text style={styles.markReadText}>Barchasini o'qildi</Text>
+        <View style={styles.headerRight}>
+          {activeTab === 'notifications' && unreadCount > 0 && (
+            <TouchableOpacity onPress={markAllRead} style={styles.headerBtn}>
+              <Ionicons name="checkmark-done" size={22} color="#fff" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.headerBtn}>
+            <Ionicons name="search-outline" size={22} color="#fff" />
           </TouchableOpacity>
-        )}
+        </View>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabs}>
+      <View style={styles.tabRow}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'feed' && styles.tabActive]}
           onPress={() => setActiveTab('feed')}
@@ -135,143 +123,147 @@ export default function SubscriptionsScreen() {
           onPress={() => setActiveTab('notifications')}
         >
           <View style={styles.tabInner}>
-            <Text style={[styles.tabText, activeTab === 'notifications' && styles.tabTextActive]}>
-              Bildirishnomalar
-            </Text>
+            <Text style={[styles.tabText, activeTab === 'notifications' && styles.tabTextActive]}>Bildirishnomalar</Text>
             {unreadCount > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{unreadCount}</Text>
-              </View>
+              <View style={styles.badge}><Text style={styles.badgeText}>{unreadCount}</Text></View>
             )}
           </View>
         </TouchableOpacity>
       </View>
 
-      {/* Feed Tab */}
+      {/* FEED TAB */}
       {activeTab === 'feed' && (
-        <>
-          {/* Channel avatars strip */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#aaa" />}
+        >
+          {/* Channel avatar strip */}
           {subscriptions.length > 0 && (
-            <ScrollView
-              horizontal showsHorizontalScrollIndicator={false}
-              style={styles.channelStrip} contentContainerStyle={{ gap: 16, paddingHorizontal: 16 }}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 14, gap: 14, paddingVertical: 12 }}
             >
               {subscriptions.map(ch => {
                 const name = ch.username ?? ch.full_name ?? '?'
                 return (
-                  <TouchableOpacity
-                    key={ch.id}
-                    style={styles.channelChip}
+                  <TouchableOpacity key={ch.id} style={styles.subChip}
                     onPress={() => router.push(`/channel/${ch.id}` as any)}
                   >
-                    <View style={styles.chipAvatar}>
-                      {ch.avatar_url ? (
-                        <Image source={{ uri: ch.avatar_url }} style={styles.chipAvatarImg} />
-                      ) : (
-                        <Text style={styles.chipAvatarText}>{name[0].toUpperCase()}</Text>
-                      )}
+                    <View style={styles.subAvatar}>
+                      {ch.avatar_url
+                        ? <Image source={{ uri: ch.avatar_url }} style={styles.subAvatarImg} />
+                        : <Text style={styles.subAvatarText}>{name[0].toUpperCase()}</Text>
+                      }
                     </View>
-                    <Text style={styles.chipName} numberOfLines={1}>{name}</Text>
+                    <Text style={styles.subChipName} numberOfLines={1}>{name}</Text>
                   </TouchableOpacity>
                 )
               })}
             </ScrollView>
           )}
 
-          {videos.length === 0 ? (
-            <View style={styles.emptySection}>
-              <Ionicons name="tv-outline" size={64} color="#ccc" />
-              <Text style={styles.emptyTitle}>Obuna bo'lmadingiz</Text>
-              <Text style={styles.emptyDesc}>Yangi videolar uchun kanallarga obuna bo'ling</Text>
-              <TouchableOpacity style={styles.exploreBtn} onPress={() => router.push('/(tabs)/' as any)}>
-                <Text style={styles.exploreBtnText}>Kanallarni topish</Text>
+          {/* Filter chips */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingBottom: 10 }}
+          >
+            {SUB_FILTERS.map(f => (
+              <TouchableOpacity
+                key={f}
+                style={[styles.filterChip, activeFilter === f && styles.filterChipActive]}
+                onPress={() => setActiveFilter(f)}
+              >
+                <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>{f}</Text>
               </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Videos */}
+          {loading ? (
+            <View style={styles.centered}><Text style={{ color: '#aaa' }}>Yuklanmoqda...</Text></View>
+          ) : videos.length === 0 ? (
+            <View style={styles.centered}>
+              <Ionicons name="tv-outline" size={64} color="#444" />
+              <Text style={styles.emptyTitle}>Obuna bo'lmadingiz</Text>
+              <Text style={styles.emptyDesc}>Kanallar topish uchun asosiy sahifaga boring</Text>
             </View>
           ) : (
-            <FlashList
-              data={videos}
-              keyExtractor={item => item.id}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.videoCard}
-                  onPress={() => router.push(`/video/${item.id}` as any)}
+            videos.map(video => {
+              const ch = video.channel as any
+              return (
+                <TouchableOpacity key={video.id} style={styles.videoCard}
+                  onPress={() => router.push(`/video/${video.id}` as any)}
                 >
-                  <View style={styles.videoThumb}>
-                    {item.thumbnail_url ? (
-                      <Image source={{ uri: item.thumbnail_url }} style={styles.thumbImg} resizeMode="cover" />
-                    ) : (
-                      <View style={[styles.thumbImg, styles.thumbPlaceholder]}>
-                        <Ionicons name="play-circle" size={32} color="#fff" />
-                      </View>
-                    )}
-                    {item.duration > 0 && (
+                  <View style={styles.thumbWrapper}>
+                    {video.thumbnail_url
+                      ? <Image source={{ uri: video.thumbnail_url }} style={styles.thumb} resizeMode="cover" />
+                      : <View style={[styles.thumb, styles.thumbPlaceholder]}><Ionicons name="play-circle" size={48} color="#555" /></View>
+                    }
+                    {video.duration > 0 && (
                       <View style={styles.durationBadge}>
-                        <Text style={styles.durationText}>{formatDuration(item.duration)}</Text>
+                        <Text style={styles.durationText}>{formatDuration(video.duration)}</Text>
                       </View>
                     )}
                   </View>
-                  <View style={styles.videoInfo}>
-                    <View style={styles.videoAvatar}>
-                      {(item as any).channel?.avatar_url ? (
-                        <Image source={{ uri: (item as any).channel.avatar_url }} style={{ width: 32, height: 32, borderRadius: 16 }} />
-                      ) : (
-                        <Text style={styles.videoAvatarText}>
-                          {((item as any).channel?.username ?? '?')[0].toUpperCase()}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.videoTitle} numberOfLines={2}>{item.title}</Text>
-                      <Text style={styles.videoMeta}>
-                        {(item as any).channel?.username ?? 'Kanal'}
-                      </Text>
-                      <Text style={styles.videoMeta}>
-                        {formatViews(item.views_count)} ko'rilgan · {timeAgo(item.created_at)}
+                  <View style={styles.cardRow}>
+                    <TouchableOpacity style={styles.cardAvatar}
+                      onPress={() => router.push(`/channel/${video.channel_id}` as any)}
+                    >
+                      {ch?.avatar_url
+                        ? <Image source={{ uri: ch.avatar_url }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                        : <Text style={styles.cardAvatarText}>{(ch?.username ?? '?')[0].toUpperCase()}</Text>
+                      }
+                    </TouchableOpacity>
+                    <View style={styles.cardMeta}>
+                      <Text style={styles.cardTitle} numberOfLines={2}>{video.title}</Text>
+                      <Text style={styles.cardSub}>
+                        {ch?.username ?? 'Kanal'} · {formatViews(video.views_count)} ko'rilgan · {timeAgo(video.created_at)}
                       </Text>
                     </View>
+                    <TouchableOpacity style={{ padding: 4 }}>
+                      <Ionicons name="ellipsis-vertical" size={16} color="#aaa" />
+                    </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
-              )}
-              showsVerticalScrollIndicator={false}
-            />
+              )
+            })
           )}
-        </>
+          <View style={{ height: 20 }} />
+        </ScrollView>
       )}
 
-      {/* Notifications Tab */}
+      {/* NOTIFICATIONS TAB */}
       {activeTab === 'notifications' && (
-          <FlashList
-              data={notifications}
-              keyExtractor={item => item.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        <FlatList
+          data={notifications}
+          keyExtractor={item => item.id}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#aaa" />}
           ListEmptyComponent={
-            <View style={styles.emptySection}>
-              <Ionicons name="notifications-off-outline" size={64} color="#ccc" />
-              <Text style={styles.emptyTitle}>Bildirishnoma yo'q</Text>
+            <View style={styles.centered}>
+              <Ionicons name="notifications-off-outline" size={64} color="#444" />
+              <Text style={styles.emptyTitle}>Bildirishnomalar yo'q</Text>
             </View>
           }
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[styles.notifItem, !item.is_read && styles.notifUnread]}
-              onPress={() => {
-                if (item.video_id) router.push(`/video/${item.video_id}` as any)
-              }}
+              onPress={() => { if (item.video_id) router.push(`/video/${item.video_id}` as any) }}
             >
-              <View style={[styles.notifIcon, { backgroundColor: item.type === 'like' ? '#fee2e2' : item.type === 'subscribe' ? '#dbeafe' : '#dcfce7' }]}>
-                <Ionicons name={NOTIF_ICONS[item.type] ?? 'notifications'} size={20} color="#0f0f0f" />
+              <View style={styles.notifLeft}>
+                <View style={styles.notifFromAvatar}>
+                  {(item as any).from_user?.avatar_url
+                    ? <Image source={{ uri: (item as any).from_user.avatar_url }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                    : <Ionicons name={NOTIF_ICONS[item.type] ?? 'notifications'} size={20} color="#fff" />
+                  }
+                </View>
               </View>
               <View style={styles.notifContent}>
                 <Text style={styles.notifText}>
-                  <Text style={styles.notifUser}>
-                    {item.from_user?.username ?? item.from_user?.full_name ?? 'Foydalanuvchi'}
-                  </Text>
+                  <Text style={styles.notifUser}>{(item as any).from_user?.username ?? 'Foydalanuvchi'}</Text>
                   {' '}{item.message}
                 </Text>
                 <Text style={styles.notifTime}>{timeAgo(item.created_at)}</Text>
               </View>
-              {item.video?.thumbnail_url && (
-                <Image source={{ uri: item.video.thumbnail_url }} style={styles.notifThumb} />
+              {(item as any).video?.thumbnail_url && (
+                <Image source={{ uri: (item as any).video.thumbnail_url }} style={styles.notifThumb} />
               )}
               {!item.is_read && <View style={styles.unreadDot} />}
             </TouchableOpacity>
@@ -284,70 +276,75 @@ export default function SubscriptionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: '#0f0f0f' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 40, minHeight: 300 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 52, paddingBottom: 12,
-    borderBottomWidth: 0.5, borderBottomColor: '#e5e5e5',
+    paddingHorizontal: 14, paddingTop: 52, paddingBottom: 10,
   },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#0f0f0f' },
-  markReadText: { fontSize: 13, color: '#065fd4', fontWeight: '600' },
-  tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#e5e5e5' },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: '#fff' },
+  headerRight: { flexDirection: 'row', gap: 4 },
+  headerBtn: { padding: 6 },
+  tabRow: { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#272727' },
   tab: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: '#0f0f0f' },
+  tabActive: { borderBottomWidth: 2, borderBottomColor: '#fff' },
   tabInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#606060' },
-  tabTextActive: { color: '#0f0f0f' },
+  tabText: { fontSize: 14, fontWeight: '600', color: '#aaa' },
+  tabTextActive: { color: '#fff' },
   badge: {
-    backgroundColor: '#ff0000', borderRadius: 10, minWidth: 18,
-    height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4,
+    backgroundColor: '#ff0000', borderRadius: 10, minWidth: 18, height: 18,
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4,
   },
   badgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  channelStrip: { maxHeight: 88, paddingVertical: 10 },
-  channelChip: { alignItems: 'center', gap: 4, width: 56 },
-  chipAvatar: {
-    width: 48, height: 48, borderRadius: 24, backgroundColor: '#0f0f0f',
+  subChip: { alignItems: 'center', gap: 4, width: 52 },
+  subAvatar: {
+    width: 48, height: 48, borderRadius: 24, backgroundColor: '#333',
     justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
   },
-  chipAvatarImg: { width: 48, height: 48 },
-  chipAvatarText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  chipName: { fontSize: 11, color: '#0f0f0f', textAlign: 'center' },
-  emptySection: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 40, minHeight: 400 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#0f0f0f' },
-  emptyDesc: { fontSize: 14, color: '#606060', textAlign: 'center' },
-  exploreBtn: { backgroundColor: '#0f0f0f', borderRadius: 20, paddingHorizontal: 20, paddingVertical: 10 },
-  exploreBtnText: { color: '#fff', fontWeight: '700' },
-  videoCard: { marginBottom: 8 },
-  videoThumb: { width: '100%', aspectRatio: 16 / 9, position: 'relative' },
-  thumbImg: { width: '100%', height: '100%', backgroundColor: '#0f0f0f' },
+  subAvatarImg: { width: 48, height: 48 },
+  subAvatarText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  subChipName: { fontSize: 11, color: '#ccc', textAlign: 'center' },
+  filterChip: { backgroundColor: '#272727', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  filterChipActive: { backgroundColor: '#fff' },
+  filterText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+  filterTextActive: { color: '#0f0f0f' },
+  videoCard: { marginBottom: 16 },
+  thumbWrapper: { position: 'relative' },
+  thumb: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#1a1a1a' },
   thumbPlaceholder: { justifyContent: 'center', alignItems: 'center' },
   durationBadge: {
-    position: 'absolute', bottom: 8, right: 8,
+    position: 'absolute', bottom: 6, right: 8,
     backgroundColor: 'rgba(0,0,0,0.85)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2,
   },
-  durationText: { color: '#fff', fontSize: 11, fontWeight: '600' },
-  videoInfo: { flexDirection: 'row', gap: 10, padding: 12 },
-  videoAvatar: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: '#0f0f0f',
-    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  durationText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  cardRow: { flexDirection: 'row', paddingHorizontal: 12, paddingTop: 10, gap: 10 },
+  cardAvatar: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#333',
+    justifyContent: 'center', alignItems: 'center', overflow: 'hidden', flexShrink: 0,
   },
-  videoAvatarText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-  videoTitle: { fontSize: 14, fontWeight: '600', color: '#0f0f0f', lineHeight: 20 },
-  videoMeta: { fontSize: 12, color: '#606060' },
+  cardAvatarText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  cardMeta: { flex: 1, gap: 3 },
+  cardTitle: { fontSize: 14, fontWeight: '600', color: '#fff', lineHeight: 20 },
+  cardSub: { fontSize: 12, color: '#aaa' },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#fff', textAlign: 'center' },
+  emptyDesc: { fontSize: 13, color: '#aaa', textAlign: 'center' },
   notifItem: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 16, borderBottomWidth: 0.5, borderBottomColor: '#f2f2f2', position: 'relative',
+    padding: 14, borderBottomWidth: 0.5, borderBottomColor: '#1f1f1f', position: 'relative',
   },
-  notifUnread: { backgroundColor: '#fafafa' },
-  notifIcon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  notifUnread: { backgroundColor: '#1a1a1a' },
+  notifLeft: {},
+  notifFromAvatar: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#333',
+    justifyContent: 'center', alignItems: 'center', overflow: 'hidden',
+  },
   notifContent: { flex: 1, gap: 2 },
-  notifText: { fontSize: 13, color: '#0f0f0f', lineHeight: 18 },
+  notifText: { fontSize: 13, color: '#fff', lineHeight: 18 },
   notifUser: { fontWeight: '700' },
-  notifTime: { fontSize: 12, color: '#909090' },
-  notifThumb: { width: 48, height: 36, borderRadius: 4 },
+  notifTime: { fontSize: 12, color: '#aaa' },
+  notifThumb: { width: 64, height: 48, borderRadius: 4 },
   unreadDot: {
-    position: 'absolute', top: 16, right: 12,
-    width: 8, height: 8, borderRadius: 4, backgroundColor: '#065fd4',
+    position: 'absolute', top: 14, right: 12,
+    width: 8, height: 8, borderRadius: 4, backgroundColor: '#3ea6ff',
   },
 })
